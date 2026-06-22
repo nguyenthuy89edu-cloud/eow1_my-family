@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Balanced Family Match</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #FF9800;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #ui-layer {
+            text-align: center;
+            padding: 10px;
+            background: white;
+            width: 100%;
+            border-bottom: 5px solid #333;
+            z-index: 100;
+            box-sizing: border-box;
+        }
+
+        #fuel-container {
+            width: 60%;
+            height: 25px;
+            background: #eee;
+            border-radius: 15px;
+            margin: 8px auto;
+            border: 3px solid #333;
+            overflow: hidden;
+        }
+        #fuel-bar {
+            width: 100%;
+            height: 100%;
+            background: #4CAF50;
+        }
+
+        #game-container {
+            position: relative;
+            width: 95vw;
+            height: 70vh;
+            margin-top: 15px;
+            transition: transform 0.1s ease; /* Hỗ trợ hiệu ứng rung mượt mà */
+        }
+
+        /* Định nghĩa hiệu ứng rung màn hình */
+        @keyframes shake {
+            0% { transform: translate(0, 0); }
+            20% { transform: translate(-8px, 5px); }
+            40% { transform: translate(8px, -5px); }
+            60% { transform: translate(-5px, 3px); }
+            80% { transform: translate(5px, -3px); }
+            100% { transform: translate(0, 0); }
+        }
+
+        .shake-active {
+            animation: shake 0.3s ease-in-out;
+        }
+
+        #game-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            background: #81D4FA;
+            border: 6px solid #fff;
+            border-radius: 25px;
+            overflow: hidden;
+            background-image: linear-gradient(to bottom, #81D4FA 80%, #4CAF50 80%, #4CAF50 100%);
+            box-sizing: border-box;
+        }
+
+        #fx-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 30;
+        }
+
+        .target-tag {
+            position: absolute;
+            padding: 8px 16px;
+            background: white;
+            color: #1A237E;
+            border-radius: 12px;
+            font-weight: bold;
+            border: 3px solid #1A237E;
+            z-index: 5;
+            font-size: 1.1rem; 
+            text-transform: lowercase;
+            white-space: nowrap;
+            box-shadow: 0 4px 0 #1A237E;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+        }
+
+        .vehicle-emoji {
+            position: absolute;
+            font-size: 65px; 
+            cursor: grab;
+            z-index: 20;
+            filter: drop-shadow(0 5px 3px rgba(0,0,0,0.2));
+            touch-action: none;
+            transform: translate(-50%, -50%);
+            line-height: 1;
+        }
+        .vehicle-emoji:active {
+            cursor: grabbing;
+        }
+
+        #status-text { 
+            font-size: 20px; 
+            font-weight: bold; 
+            color: #333; 
+            text-transform: lowercase;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            font-size: 18px;
+            cursor: pointer;
+            border-radius: 30px;
+            border: none;
+            color: white;
+            font-weight: bold;
+            margin: 5px;
+            background: #E91E63;
+            text-transform: lowercase;
+            box-shadow: 0 4px 0 #ad1457;
+        }
+        .btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #ad1457;
+        }
+
+        #overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            z-index: 500;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+        }
+        
+        #over-msg {
+            font-size: 50px;
+            text-transform: lowercase;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div id="status-text">matched: <span id="count">0</span>/7 | fuel:</div>
+        <div id="fuel-container"><div id="fuel-bar"></div></div>
+        <button id="start-btn" class="btn" onclick="startGame()">▶ start game</button>
+    </div>
+
+    <div id="game-container">
+        <div id="game-canvas"></div>
+        <canvas id="fx-canvas"></canvas>
+    </div>
+
+    <div id="overlay">
+        <h1 id="over-msg"></h1>
+        <button class="btn" style="background:#2196F3; box-shadow: 0 4px 0 #0b7dda;" onclick="location.reload()">try again</button>
+    </div>
+
+    <script>
+        const items = [
+            { n: "parents", e: "👪" },
+            { n: "father", e: "👨" },
+            { n: "mother", e: "👩" },
+            { n: "brother", e: "👦" },
+            { n: "sister", e: "👧" },
+            { n: "grandfather", e: "👴" },
+            { n: "grandmother", e: "👵" }
+        ];
+
+        let score = 0, fuel = 100, gameActive = false;
+        let ctx = null;
+        const gameContainer = document.getElementById('game-container');
+        const canvas = document.getElementById('game-canvas');
+        const fxCanvas = document.getElementById('fx-canvas');
+        const fxCtx = fxCanvas.getContext('2d');
+        
+        let melodyInterval, fuelInterval;
+        let particles = [];
+
+        function initAudio() {
+            if (!ctx) {
+                ctx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (ctx.state === 'suspended') {
+                ctx.resume();
+            }
+        }
+
+        function resizeFxCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            fxCanvas.width = rect.width;
+            fxCanvas.height = rect.height;
+        }
+
+        function playBeep(freq, type, dur) {
+            if(!ctx) return;
+            const osc = ctx.createOscillator();
+            const g = ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, ctx.currentTime);
+            g.gain.setValueAtTime(0.06, ctx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+            osc.connect(g); g.connect(ctx.destination);
+            osc.start(); osc.stop(ctx.currentTime + dur);
+        }
+
+        // Hàm phát âm từ vựng bằng tiếng Anh
+        function speakWord(word) {
+            if ('speechSynthesis' in window) {
+                // Tạm dừng các giọng đọc cũ để tránh đè âm thanh
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(word);
+                utterance.lang = 'en-US'; // Thiết lập ngôn ngữ tiếng Anh Mỹ
+                utterance.rate = 0.9;     // Tốc độ đọc vừa phải, dễ nghe
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        // Kích hoạt hiệu ứng rung màn hình
+        function triggerScreenShake() {
+            gameContainer.classList.remove('shake-active');
+            void gameContainer.offsetWidth; // Thủ thuật nhỏ để reset hiệu ứng CSS animation
+            gameContainer.classList.add('shake-active');
+            
+            // Tự động gỡ bỏ class sau khi chạy xong hiệu ứng (0.3 giây)
+            setTimeout(() => {
+                gameContainer.classList.remove('shake-active');
+            }, 300);
+        }
+
+        function createFirework(x, y) {
+            const colors = ['#FFEB3B', '#00E676', '#00B0FF', '#FF1744', '#E040FB', '#FFFF00'];
+            const count = 40;
+            for (let i = 0; i < count; i++) {
+                const angle = (Math.PI * 2 / count) * i + Math.random() * 0.5;
+                const speed = Math.random() * 4 + 2;
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    alpha: 1,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    size: Math.random() * 3 + 2
+                });
+            }
+        }
+
+        function updateFx() {
+            fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.08;
+                p.alpha -= 0.02;
+
+                if (p.alpha <= 0) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+
+                fxCtx.save();
+                fxCtx.globalAlpha = p.alpha;
+                fxCtx.fillStyle = p.color;
+                fxCtx.beginPath();
+                fxCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                fxCtx.fill();
+                fxCtx.restore();
+            }
+            requestAnimationFrame(updateFx);
+        }
+
+        function startGame() {
+            if(gameActive) return;
+            initAudio();
+            resizeFxCanvas();
+            window.addEventListener('resize', resizeFxCanvas);
+            gameActive = true;
+            document.getElementById('start-btn').style.display = 'none';
+            
+            updateFx();
+            
+            const notes = [261.63, 329.63, 392.00, 349.23];
+            let step = 0;
+            melodyInterval = setInterval(() => { 
+                if(gameActive) playBeep(notes[step++ % 4], 'sine', 0.4); 
+            }, 1000);
+
+            fuelInterval = setInterval(() => {
+                if(!gameActive) return;
+                fuel -= 0.12; 
+                if(fuel < 0) fuel = 0;
+                document.getElementById('fuel-bar').style.width = fuel + "%";
+                if(fuel <= 0) endGame(false);
+            }, 100);
+
+            items.forEach(item => spawn(item));
+        }
+
+        function spawn(item) {
+            const rect = canvas.getBoundingClientRect();
+            
+            let tx = Math.random() * (rect.width - 140) + 70;
+            let ty = Math.random() * (rect.height - 140) + 70;
+            let tdx = (Math.random() - 0.5) * 0.5;
+            let tdy = (Math.random() - 0.5) * 0.5;
+
+            let vx = Math.random() * (rect.width - 140) + 70;
+            let vy = Math.random() * (rect.height - 140) + 70;
+            let vdx = (Math.random() - 0.5) * 0.7;
+            let vdy = (Math.random() - 0.5) * 0.7;
+
+            const tag = document.createElement('div');
+            tag.className = 'target-tag'; 
+            tag.innerText = item.n;
+            tag.style.left = tx + 'px';
+            tag.style.top = ty + 'px';
+            canvas.appendChild(tag);
+
+            const v = document.createElement('div');
+            v.className = 'vehicle-emoji'; 
+            v.innerText = item.e;
+            v.style.left = vx + 'px';
+            v.style.top = vy + 'px';
+            canvas.appendChild(v);
+
+            function animate() {
+                if(!gameActive) return;
+                const currentRect = canvas.getBoundingClientRect();
+
+                if(!tag.dataset.done) {
+                    tx += tdx; ty += tdy;
+                    if(tx < 50 || tx > currentRect.width - 50) tdx *= -1;
+                    if(ty < 30 || ty > currentRect.height - 40) tdy *= -1;
+                    tag.style.left = tx + 'px'; tag.style.top = ty + 'px';
+                }
+                
+                if(!v.dataset.drag && !v.dataset.done) {
+                    vx += vdx; vy += vdy;
+                    if(vx < 40 || vx > currentRect.width - 40) vdx *= -1;
+                    if(vy < 40 || vy > currentRect.height - 40) vdy *= -1;
+                    v.style.left = vx + 'px'; v.style.top = vy + 'px';
+                }
+                requestAnimationFrame(animate);
+            }
+            requestAnimationFrame(animate);
+
+            const onStart = (e) => {
+                if(v.dataset.done || !gameActive) return;
+                initAudio();
+                v.dataset.drag = "true";
+                v.style.zIndex = "1000"; 
+                if(e.cancelable) e.preventDefault();
+            };
+
+            const onMove = (e) => {
+                if(v.dataset.drag !== "true") return;
+                let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                let clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                let r = canvas.getBoundingClientRect();
+                
+                vx = clientX - r.left;
+                vy = clientY - r.top;
+                
+                v.style.left = vx + 'px';
+                v.style.top = vy + 'px';
+            };
+
+            const onEnd = () => {
+                if(v.dataset.drag !== "true") return;
+                v.dataset.drag = "";
+                v.style.zIndex = "20";
+
+                const vR = v.getBoundingClientRect();
+                const tR = tag.getBoundingClientRect();
+
+                const distance = Math.hypot((vR.left + vR.width/2) - (tR.left + tR.width/2), (vR.top + vR.height/2) - (tR.top + tR.height/2));
+                
+                if (distance < 65) { 
+                    v.dataset.done = "true"; tag.dataset.done = "true";
+                    v.style.display = "none"; 
+                    tag.style.background = "#4CAF50";
+                    tag.style.color = "white"; 
+                    tag.style.borderColor = "#2E7D32";
+                    tag.innerHTML = "✅ " + item.n;
+                    
+                    // Phát âm thanh bíp và ĐỌC TỪ VỰNG TIẾNG ANH
+                    playBeep(880, 'sine', 0.2); 
+                    speakWord(item.n);
+                    
+                    const r = canvas.getBoundingClientRect();
+                    createFirework(tR.left - r.left + tR.width / 2, tR.top - r.top + tR.height / 2);
+                    
+                    score++;
+                    fuel = Math.min(100, fuel + 15);
+                    document.getElementById('fuel-bar').style.width = fuel + "%";
+                    document.getElementById('count').innerText = score;
+                    
+                    if(score === 7) endGame(true);
+                } else {
+                    // Phát âm thanh buzz và RUNG MÀN HÌNH
+                    playBeep(120, 'sawtooth', 0.25); 
+                    triggerScreenShake();
+                }
+            };
+
+            v.addEventListener('touchstart', onStart, {passive: false});
+            window.addEventListener('touchmove', onMove, {passive: false});
+            window.addEventListener('touchend', onEnd);
+            
+            v.addEventListener('mousedown', onStart);
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onEnd);
+        }
+
+        function endGame(win) {
+            gameActive = false;
+            clearInterval(melodyInterval);
+            clearInterval(fuelInterval);
+            window.removeEventListener('resize', resizeFxCanvas);
+            
+            const screen = document.getElementById('overlay');
+            screen.style.display = 'flex';
+            
+            const msgEl = document.getElementById('over-msg');
+            msgEl.innerText = win ? "well done! you win!" : "out of fuel!";
+            msgEl.style.color = win ? "#4CAF50" : "#F44336";
+        }
+    </script>
+</body>
+</html>
